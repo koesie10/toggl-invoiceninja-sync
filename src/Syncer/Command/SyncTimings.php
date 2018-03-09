@@ -2,16 +2,17 @@
 
 namespace Syncer\Command;
 
+use Symfony\Component\Config\Definition\Processor;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+use Syncer\Configuration\ProjectsConfiguration;
 use Syncer\Dto\InvoiceNinja\Task;
 use Syncer\Dto\Toggl\TimeEntry;
 use Syncer\InvoiceNinja\Client as InvoiceNinjaClient;
 use Syncer\Toggl\ReportsClient;
 use Syncer\Toggl\TogglClient;
-
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Class SyncTimings
@@ -19,8 +20,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  *
  * @author Matthieu Calie <matthieu@calie.be>
  */
-class SyncTimings extends Command
-{
+class SyncTimings extends Command {
     /**
      * @var SymfonyStyle
      */
@@ -44,11 +44,6 @@ class SyncTimings extends Command
     /**
      * @var array
      */
-    private $clients;
-
-    /**
-     * @var array
-     */
     private $projects;
 
     /**
@@ -57,21 +52,18 @@ class SyncTimings extends Command
      * @param TogglClient $togglClient
      * @param ReportsClient $reportsClient
      * @param InvoiceNinjaClient $invoiceNinjaClient
-     * @param array $clients
      * @param array $projects
      */
     public function __construct(
         TogglClient $togglClient,
         ReportsClient $reportsClient,
         InvoiceNinjaClient $invoiceNinjaClient,
-        $clients,
         $projects
     ) {
-        $this->togglClient = $togglClient;
-        $this->reportsClient = $reportsClient;
+        $this->togglClient        = $togglClient;
+        $this->reportsClient      = $reportsClient;
         $this->invoiceNinjaClient = $invoiceNinjaClient;
-        $this->clients = $clients;
-        $this->projects = $projects;
+        $this->projects           = $projects;
 
         parent::__construct();
     }
@@ -79,20 +71,25 @@ class SyncTimings extends Command
     /**
      * Configure the command
      */
-    protected function configure()
-    {
+    protected function configure() {
         $this
             ->setName('sync:timings')
-            ->setDescription('Syncs timings from toggl to invoiceninja')
-        ;
+            ->setDescription('Syncs timings from toggl to invoiceninja');
     }
 
     /**
      * {@inheritdoc}
      */
-    protected function execute(InputInterface $input, OutputInterface $output)
-    {
+    protected function execute(InputInterface $input, OutputInterface $output) {
         $this->io = new SymfonyStyle($input, $output);
+
+        $processor = new Processor();
+
+        $projectsConfiguration  = new ProjectsConfiguration();
+        $processedConfiguration = $processor->processConfiguration($projectsConfiguration, [$this->projects]);
+
+        $this->projects = $processedConfiguration;
+
         $workspaces = $this->togglClient->getWorkspaces();
 
         if (!is_array($workspaces) || count($workspaces) === 0) {
@@ -104,25 +101,23 @@ class SyncTimings extends Command
         foreach ($workspaces as $workspace) {
             $detailedReport = $this->reportsClient->getDetailedReport($workspace->getId());
 
-            foreach($detailedReport->getData() as $timeEntry) {
+            foreach ($detailedReport->getData() as $timeEntry) {
                 $timeEntrySent = false;
 
-                // Log the entry if the client key exists
-                if ($this->timeEntryCanBeLoggedByConfig($this->clients, $timeEntry->getClient(), $timeEntrySent)) {
-                    $this->logTask($timeEntry, $this->clients, $timeEntry->getClient());
-
-                    $timeEntrySent = true;
-                }
-
                 // Log the entry if the project key exists
-                if ($this->timeEntryCanBeLoggedByConfig($this->projects, $timeEntry->getProject(), $timeEntrySent)) {
-                    $this->logTask($timeEntry, $this->projects, $timeEntry->getProject());
+                if ($this->timeEntryCanBeLoggedByConfig($this->projects, $timeEntry->getPid(), $timeEntrySent)) {
+                    $this->logTask($timeEntry, $this->projects, $timeEntry->getPid());
 
                     $timeEntrySent = true;
                 }
 
                 if ($timeEntrySent) {
-                    $this->io->success('TimeEntry ('. $timeEntry->getDescription() . ') sent to InvoiceNinja');
+                    $this->io->success(sprintf(
+                        'TimeEntry (%s/%s - %s) sent to InvoiceNinja',
+                        $timeEntry->getClient(),
+                        $timeEntry->getProject(),
+                        $timeEntry->getDescription()
+                    ));
                 }
             }
         }
@@ -130,13 +125,12 @@ class SyncTimings extends Command
 
     /**
      * @param array $config
-     * @param string $entryKey
+     * @param int $entryKey
      * @param bool $hasAlreadyBeenSent
      *
      * @return bool
      */
-    private function timeEntryCanBeLoggedByConfig(array $config, string $entryKey, bool $hasAlreadyBeenSent): bool
-    {
+    private function timeEntryCanBeLoggedByConfig(array $config, int $entryKey, bool $hasAlreadyBeenSent): bool {
         if ($hasAlreadyBeenSent) {
             return false;
         }
@@ -147,17 +141,19 @@ class SyncTimings extends Command
     /**
      * @param TimeEntry $entry
      * @param array $config
-     * @param string $key
+     * @param int $key
      *
      * @return void
      */
-    private function logTask(TimeEntry $entry, array $config, string $key)
-    {
+    private function logTask(TimeEntry $entry, array $config, int $key) {
+        $info = $config[$key];
+
         $task = new Task();
 
-        $task->setDescription($this->buildTaskDescription($entry));
+        $task->setDescription($entry->getDescription());
         $task->setTimeLog($this->buildTimeLog($entry));
-        $task->setClientId($config[$key]);
+        $task->setClientId($info['client_id']);
+        $task->setProjectId($info['project_id']);
 
         $this->invoiceNinjaClient->saveNewTask($task);
     }
@@ -167,30 +163,13 @@ class SyncTimings extends Command
      *
      * @return string
      */
-    private function buildTaskDescription(TimeEntry $entry): string
-    {
-        $description = '';
-
-        if ($entry->getProject()) {
-            $description .= $entry->getProject() . ': ';
-        }
-
-        $description .= $entry->getDescription();
-
-        return $description;
-    }
-
-    /**
-     * @param TimeEntry $entry
-     *
-     * @return string
-     */
-    private function buildTimeLog(TimeEntry $entry): string
-    {
-        $timeLog = [[
-            $entry->getStart()->getTimestamp(),
-            $entry->getEnd()->getTimestamp(),
-        ]];
+    private function buildTimeLog(TimeEntry $entry): string {
+        $timeLog = [
+            [
+                $entry->getStart()->getTimestamp(),
+                $entry->getEnd()->getTimestamp(),
+            ],
+        ];
 
         return \GuzzleHttp\json_encode($timeLog);
     }

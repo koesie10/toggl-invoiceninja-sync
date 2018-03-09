@@ -1,7 +1,7 @@
 parameters:
     debug: false
-    serializer.config_dir: '%kernel.root_dir%/config/serializer'
-    serializer.cache_dir: '%kernel.root_dir%/cache'
+    serializer.config_dir: "%kernel.root_dir%/config/serializer"
+    serializer.cache_dir: "%kernel.root_dir%/cache"
 
     toggl.api_key: KEY
     toggl.toggl_base_uri: https://www.toggl.com/api/
@@ -10,13 +10,17 @@ parameters:
     invoice_ninja.base_uri: http://invoiceninja.dev/api/
     invoice_ninja.api_key: KEY
 
-    # Key = name in toggl (Has to be correct)
-    # Value = client id from invoiceninja
-    clients:
-         client_name: 1
-
-    # Key = name in toggl
-    # Value= id from invoiceninja
+    # Key = id of project in toggl
+    # Value =
+    #           client_id = id of client in InvoiceNinja
+    #           project_id = id of project in InvoiceNinja
     projects:
-         first_project: 1
-         second_project: 2
+        103998205:
+          client_id: 1
+          project_id: 1
+        102830498:
+          client_id: 1
+          project_id: 2
+        104416707:
+          client_id: 1
+          project_id: 3

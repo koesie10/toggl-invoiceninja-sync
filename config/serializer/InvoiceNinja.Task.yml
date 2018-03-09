@@ -12,3 +12,7 @@ Syncer\Dto\InvoiceNinja\Task:
             type: integer
             exclude: false
             serializedName: client_id
+        projectId:
+            type: integer
+            exclude: false
+            serializedName: project_id
