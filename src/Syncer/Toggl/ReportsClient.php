@@ -9,12 +9,12 @@ use Syncer\Dto\Toggl\DetailedReport;
 
 /**
  * Class ReportsClient
+ *
  * @package Syncer\Toggl
  *
- * @author Matthieu Calie <matthieu@calie.be>
+ * @author  Matthieu Calie <matthieu@calie.be>
  */
-class ReportsClient
-{
+class ReportsClient {
     const VERSION = 'v2';
 
     /**
@@ -34,32 +34,43 @@ class ReportsClient
 
     /**
      * TogglClient constructor.
-     * @param Client $client
+     *
+     * @param Client              $client
      * @param SerializerInterface $serializer
-     * @param $api_key
+     * @param                     $api_key
      */
-    public function __construct(Client $client, SerializerInterface $serializer, $api_key)
-    {
-        $this->client = $client;
+    public function __construct(Client $client, SerializerInterface $serializer, $api_key) {
+        $this->client     = $client;
         $this->serializer = $serializer;
-        $this->api_key = $api_key;
+        $this->api_key    = $api_key;
     }
 
     /**
      * Get detailed report from since yesterday
      *
-     * @param int $workspaceId
-     * @return array|\JMS\Serializer\scalar|object|DetailedReport
+     * @param int         $workspaceId
+     * @param Carbon|null $since
+     * @param Carbon|null $until
+     *
+     * @return array|object|DetailedReport
      */
-    public function getDetailedReport(int $workspaceId)
-    {
+    public function getDetailedReport(int $workspaceId, Carbon $since = null, Carbon $until = null) {
+        if ($since === null) {
+            $since = Carbon::yesterday();
+        }
+
+        if ($until === null) {
+            $until = Carbon::today();
+        }
+
         $res = $this->client->request('GET', self::VERSION . '/details', [
-            'auth' => [$this->api_key, 'api_token'],
+            'auth'  => [$this->api_key, 'api_token'],
             'query' => [
-                'user_agent' => 'matthieu@calie.be',
+                'user_agent'   => 'matthieu@calie.be',
                 'workspace_id' => $workspaceId,
-                'since' => Carbon::yesterday()->format('Y-m-d')
-            ]
+                'since'        => $since->format('Y-m-d'),
+                'until'        => $until->format('Y-m-d'),
+            ],
         ]);
 
         return $this->serializer->deserialize($res->getBody(), DetailedReport::class, 'json');

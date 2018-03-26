@@ -21,6 +21,7 @@ services:
             - '@toggl.client.toggl'
             - '@toggl.client.reports'
             - '@invoice_ninja.client'
+            - '@serializer'
             - '%projects%'
 
     toggl.guzzle.toggl:
